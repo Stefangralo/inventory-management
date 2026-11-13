@@ -1,0 +1,46 @@
+name: inventory-management
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: inventory
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-inventory}
+      POSTGRES_DB: inventory
+    ports:
+      - '127.0.0.1:${DB_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U inventory -d inventory']
+      interval: 2s
+      timeout: 5s
+      retries: 20
+  migrate:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://inventory:${POSTGRES_PASSWORD:-inventory}@db:5432/inventory
+    command: ['npm', 'run', 'migration:run:prod']
+    depends_on:
+      db:
+        condition: service_healthy
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://inventory:${POSTGRES_PASSWORD:-inventory}@db:5432/inventory
+      PORT: 3000
+    ports:
+      - '127.0.0.1:${PORT:-3000}:3000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  postgres_data:
